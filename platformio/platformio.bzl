@@ -319,7 +319,7 @@ platformio_project = rule(
         allow_single_file=True,
       ),
       "src": attr.label(
-        allow_single_file=[".cc"],
+        allow_single_file=[".ino",".cpp",".cc",".c",".pde",".h"], #Allow .h also because platformio_library doesnt compile
         mandatory=True,
       ),
       "board": attr.string(mandatory=True),
