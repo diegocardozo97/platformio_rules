@@ -49,7 +49,7 @@ _UNZIP_COMMAND="/usr/bin/unzip -o -d {project_dir} {zip_filename}"
 
 # Command that executes the PlatformIO build system and builds the project in
 # the specified directory.
-_BUILD_COMMAND="/usr/local/bin/platformio run -d {project_dir}"
+_BUILD_COMMAND="platformio.exe run -d {project_dir}"
 
 
 # Command that executes the PlatformIO build system and uploads the compiled
