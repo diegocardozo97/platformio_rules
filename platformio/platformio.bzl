@@ -52,11 +52,6 @@ _UNZIP_COMMAND="/usr/bin/unzip -o -d {project_dir} {zip_filename}"
 _BUILD_COMMAND="platformio.exe run -d {project_dir}"
 
 
-# Command that executes the PlatformIO build system and uploads the compiled
-# firmware to the device.
-_UPLOAD_COMMAND="/usr/local/bin/platformio run -d {project_dir} -t upload"
-
-
 # Header used in the shell script that makes platformio_project executable.
 # Execution will upload the firmware to the Arduino device.
 _SHELL_HEADER="#!/bin/bash"
@@ -208,26 +203,6 @@ def _emit_build_action(ctx, project_dir):
   )
 
 
-def _emit_executable_action(ctx):
-  """Emits a Bazel action that produces executable script.
-
-  When the script is executed, the compiled firmware gets uploaded to the
-  Arduino device.
-
-  Args:
-    ctx: The Skylark context.
-  """
-  # TODO(mum4k): Make this script smarter, when executed via Bazel, the current
-  # directory is project_name.runfiles/__main__ so we need to go two dirs up.
-  # This however won't work when executed directly.
-  content=[_SHELL_HEADER, _UPLOAD_COMMAND.format(project_dir="../..")]
-  ctx.file_action(
-      output=ctx.outputs.executable,
-      content="\n".join(content),
-      executable=True,
-  )
-
-
 def _platformio_project_impl(ctx):
   """Builds and optionally uploads (when executed) a PlatformIO project.
 
@@ -249,7 +224,6 @@ def _platformio_project_impl(ctx):
   # our output files will be placed.
   project_dir = ctx.outputs.platformio_ini.dirname
   _emit_build_action(ctx, project_dir)
-  _emit_executable_action(ctx)
 
 
 platformio_library = rule(
@@ -333,7 +307,6 @@ Outputs:
 
 platformio_project = rule(
     implementation=_platformio_project_impl,
-    executable=True,
     outputs = {
       "main_cpp": "src/main.cpp",
       "platformio_ini": "platformio.ini",
