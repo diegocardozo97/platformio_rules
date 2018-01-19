@@ -21,17 +21,8 @@ These are Bazel Skylark rules for building and uploading
 """
 
 
-# The relative filename of the header file.
-_HEADER_FILENAME = "{dirname}/{filename}.h"
-
-
-# The relative filename of the source file.
-_SOURCE_FILENAME = "{dirname}/{filename}.cpp"
-
-
-# The relative filename of an additional file (header or source) defined for a
-# platformio_library target.
-_ADDITIONAL_FILENAME = "{dirname}/{filename}"
+# A relative filename of a file.
+_FILENAME = "{dirname}/{filename}"
 
 
 # Command that copies the source to the destination. It creates the requiered 
@@ -93,7 +84,7 @@ def _platformio_library_impl(ctx):
 
   # Copy the header file to the desired destination.
   header_file = ctx.new_file(
-      _HEADER_FILENAME.format(dirname=name, filename=name))
+      _FILENAME.format(dirname=name, filename=ctx.file.hdr.basename))
   inputs = [ctx.file.hdr]
   outputs.append(header_file)
   commands.append(_COPY_COMMAND.format(
@@ -105,10 +96,10 @@ def _platformio_library_impl(ctx):
       for f in target.files:
         # The name of the file is the relative path to the file, this enables us
         # to prepend the name to the path.
-        additional_file_name = f.short_path #The file's name
+        additional_file_name = f.basename #The file's name
         additional_file_source = f
         additional_file_destination = ctx.new_file(
-          _ADDITIONAL_FILENAME.format(dirname=name, filename=additional_file_name))
+          _FILENAME.format(dirname=name, filename=additional_file_name))
         inputs.append(additional_file_source)
         outputs.append(additional_file_destination)
         # TODO: See if is better to copy in one time all the files to the directory
@@ -119,7 +110,7 @@ def _platformio_library_impl(ctx):
   # The src argument is optional, some C++ libraries might only have the header.
   if ctx.attr.src != None:
     source_file = ctx.new_file(
-        _SOURCE_FILENAME.format(dirname=name, filename=name))
+        _FILENAME.format(dirname=name, filename=ctx.file.src.basename))
     inputs.append(ctx.file.src)
     outputs.append(source_file)
     commands.append(_COPY_COMMAND.format(
