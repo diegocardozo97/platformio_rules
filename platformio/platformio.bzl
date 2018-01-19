@@ -46,11 +46,20 @@ _COPY_COMMAND="/bin/cp -r -v {source} {destination}"
 # the specified directory.
 _BUILD_COMMAND="platformio.exe run -d {project_dir}"
 
+
 # Creates the specify directory creating all the parents directories
 # needed. If some or all the path already exists doesnt get an error
 # -v verbose output
 # -p create the needed directories for the path
 _CREATE_DIR="/bin/mkdir -v -p {dir}"
+
+
+# Command that erase all the content of a directory
+# -r "recursively" remove all the content
+# f dont ask any confirmation
+# -v verbose
+_DELETE_DIR_CONTENT_COMMAND="/bin/rm -rf -v {dir}/*"
+
 
 # Header used in the shell script that makes platformio_project executable.
 # Execution will upload the firmware to the Arduino device.
@@ -74,6 +83,13 @@ def _platformio_library_impl(ctx):
   # Create the directory that will hold all the files.
   commands = [_CREATE_DIR.format(dir=ctx.outputs.lib_directory.path)]
   outputs= [ctx.outputs.lib_directory]
+
+  # Empty the directory to ensure that it doesnt have before-declared files
+  # TODO: Check what order is better: first make dir and then empty it or 
+  #   the other way. And see if is better to create the dir in a separate
+  #   command and then use it as input and executes the empty command.
+  commands.append(_DELETE_DIR_CONTENT_COMMAND.format(
+    dir=ctx.outputs.lib_directory.path))
 
   # Copy the header file to the desired destination.
   header_file = ctx.new_file(
@@ -157,6 +173,7 @@ def _emit_main_file_action(ctx):
   Args:
     ctx: The Skylark context.
   """
+  # TODO: Create first the directory src
   ctx.action(
       inputs=[ctx.file.src],
       outputs=[ctx.outputs.main_cpp],
@@ -182,6 +199,9 @@ def _emit_build_action(ctx, project_dir):
   libs_dir = ctx.actions.declare_directory("lib")
   commands = [_CREATE_DIR.format(dir=libs_dir.path)]
   outputs= [libs_dir]
+
+  # Erase the "lib" directory to ensure that it doesnt have before-declared libraries
+  commands.append(_DELETE_DIR_CONTENT_COMMAND.format(dir=libs_dir.path))
 
   # Copy libraries' dir to lib/
   # TODO: Add the declare_file and add the outputs for this files
