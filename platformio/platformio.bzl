@@ -82,39 +82,23 @@ def _platformio_library_impl(ctx):
   commands.append(_DELETE_DIR_CONTENT_COMMAND.format(
     dir=ctx.outputs.lib_directory.path))
 
-  # Copy the header file to the desired destination.
-  header_file = ctx.new_file(
-      _FILENAME.format(dirname=name, filename=ctx.file.hdr.basename))
-  inputs = [ctx.file.hdr]
-  outputs.append(header_file)
-  commands.append(_COPY_COMMAND.format(
-      source=ctx.file.hdr.path, destination=header_file.path))
-
-  # Copy all the additional header and source files.
-  for additional_files in [ctx.attr.add_hdrs, ctx.attr.add_srcs]:
-    for target in additional_files:
+  # Copy all header and source files.
+  inputs = []
+  for files in [ctx.attr.hdrs, ctx.attr.srcs]:
+    for target in files:
       for f in target.files:
         # The name of the file is the relative path to the file, this enables us
         # to prepend the name to the path.
-        additional_file_name = f.basename #The file's name
-        additional_file_source = f
-        additional_file_destination = ctx.new_file(
-          _FILENAME.format(dirname=name, filename=additional_file_name))
-        inputs.append(additional_file_source)
-        outputs.append(additional_file_destination)
+        file_name = f.basename #The file's name
+        file_source = f
+        file_destination = ctx.new_file(
+          _FILENAME.format(dirname=name, filename=file_name))
+        inputs.append(file_source)
+        outputs.append(file_destination)
         # TODO: See if is better to copy in one time all the files to the directory
         commands.append(_COPY_COMMAND.format(
-            source=additional_file_source.path,
-            destination=additional_file_destination.path))
-
-  # The src argument is optional, some C++ libraries might only have the header.
-  if ctx.attr.src != None:
-    source_file = ctx.new_file(
-        _FILENAME.format(dirname=name, filename=ctx.file.src.basename))
-    inputs.append(ctx.file.src)
-    outputs.append(source_file)
-    commands.append(_COPY_COMMAND.format(
-        source=ctx.file.src.path, destination=source_file.path))
+            source=file_source.path,
+            destination=file_destination.path))
 
   # TODO: Update this to use the run_shell method
   ctx.action(
@@ -256,19 +240,13 @@ platformio_library = rule(
       "lib_directory": "%{name}",
   },
   attrs={
-    "hdr": attr.label(
-        allow_single_file=[".h"],
-        mandatory=True,
-    ),
-    "src": attr.label(
-        allow_single_file=[".c", ".cc", ".cpp"],
-    ),
-    "add_hdrs": attr.label_list(
+    "hdrs": attr.label_list(
         allow_files=[".h"],
+        # TODO: Maybe is better to make at least this mandatory and not allow empty.
         allow_empty=True,
     ),
-    "add_srcs": attr.label_list(
-        allow_files=[".c", ".cc", ".cpp"],
+    "srcs": attr.label_list(
+        allow_files=[".c", ".cc", ".cpp", ".ino", ".pde"],
         allow_empty=True,
     ),
     "deps": attr.label_list(
@@ -312,12 +290,8 @@ will be set when the library is built by the PlatformIO build system.
 Args:
   name: A string, the unique name for this rule. Start with an uppercase letter
     and use underscores between words.
-  hdr: A string, the name of the C++ header file. This is mandatory.
-  src: A string, the name of the C++ source file. This is optional.
-  add_hdrs: A list of labels, additional header files to include in the
-    resulting zip file.
-  add_srcs: A list of labels, additional source files to include in the
-    resulting zip file.
+  hdrs: A list of labels of header files (.h) of the library.
+  srcs: A list of labels of source files (.c,.cc,.cpp,.ino,.pde) of the library.
   deps: A list of Bazel targets, other platformio_library targets that this one
     depends on.
 
