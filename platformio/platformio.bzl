@@ -25,6 +25,9 @@ These are Bazel Skylark rules for building and uploading
 _FILENAME = "{dirname}/{filename}"
 
 
+# Path for the libraries in lib
+_PATH_LIBRARY = "lib/{uppestDir}/{path}"
+
 # Command that copies the source to the destination. It creates the requiered 
 # path for the destination.
 # -r "recursively" copies all the content of the source if it is a directory
@@ -57,6 +60,32 @@ _DELETE_DIR_CONTENT_COMMAND="/bin/rm -rf -v {dir}/*"
 _SHELL_HEADER="#!/bin/bash"
 
 
+def _obtain_first_dir_in_path(strPath):
+  """
+  Method that gets the first directory of the path.
+
+  Args:
+    strPath: A string. The path without the bazel's directory. This is
+    calling short_path.
+
+  Outputs:
+    A string with the first directory.
+  """
+  firstParth = strPath.partition("/")[0]
+  return firstParth
+
+def _validate_path(strPath):
+  """
+  Method that validates to be a valid path of a directory. It can be a full path.
+  This will call fail if the path is not ok.
+
+  NOTE: This doesnt fully validate the path. Because bazel validate it because it
+  is used for the path of the output.
+  """
+  if strPath.endswith("/.") or strPath.find("/./") != -1:
+    fail("Attribute path cannot have /./ or end with /.")
+
+
 def _platformio_library_impl(ctx):
   """
   Collects all transitive dependancies and emits the directory
@@ -69,7 +98,8 @@ def _platformio_library_impl(ctx):
     transitive_lib_directory: A directory containing the files of
     this library.
   """
-  name = ctx.label.name
+  path = ctx.attr.path
+  _validate_path(path)
 
   # Create the directory that will hold all the files.
   commands = [_CREATE_DIR.format(dir=ctx.outputs.lib_directory.path)]
@@ -92,7 +122,7 @@ def _platformio_library_impl(ctx):
         file_name = f.basename #The file's name
         file_source = f
         file_destination = ctx.new_file(
-          _FILENAME.format(dirname=name, filename=file_name))
+          _FILENAME.format(dirname=path, filename=file_name))
         inputs.append(file_source)
         outputs.append(file_destination)
         # TODO: See if is better to copy in one time all the files to the directory
@@ -178,11 +208,22 @@ def _emit_build_action(ctx, project_dir):
   # Erase the "lib" directory to ensure that it doesnt have before-declared libraries
   commands.append(_DELETE_DIR_CONTENT_COMMAND.format(dir=libs_dir.path))
 
-  # Copy libraries' dir to lib/
+  # Create the declared path and copy there the libraries' files into lib/
   # TODO: Add the declare_file and add the outputs for this files
   for lib_dir in transitive_lib_directory:
+    # Create the directory inside lib/ with the following format:
+    # lib/uppestDir/uppestDir/restoOfThePath
+    uppestDirName = _obtain_first_dir_in_path(lib_dir.short_path) #Without bazel's path
+    dirLibrary = ctx.actions.declare_directory(
+      _PATH_LIBRARY.format(uppestDir=uppestDirName, 
+      path=lib_dir.short_path))
+    outputs.append(dirLibrary)
+    commands.append(_CREATE_DIR.format(dir=dirLibrary.path))
+
+    # Copy the content of the source directory (the source files) into
+    # the directory just created inside lib/
     commands.append(_COPY_COMMAND.format(
-        source=lib_dir.path, destination=libs_dir.path))
+        source="%s/*" % lib_dir.path, destination=dirLibrary.path))
 
   commands.append(_BUILD_COMMAND.format(project_dir=project_dir))
 
@@ -237,9 +278,10 @@ platformio_library = rule(
   implementation=_platformio_library_impl,
   outputs = {
       # TODO: Maybe is better to put as output each file instead of whole directory
-      "lib_directory": "%{name}",
+      "lib_directory": "%{path}",
   },
   attrs={
+    "path": attr.string(mandatory=True),
     "hdrs": attr.label_list(
         allow_files=[".h"],
         # TODO: Maybe is better to make at least this mandatory and not allow empty.
@@ -265,6 +307,7 @@ If you have a C++ library with files my_lib.h and my_lib.cc, using this rule:
 platformio_library(
     # Start with an uppercase letter to keep the Arduino naming style.
     name = "My_lib",
+    path = "lib1/src/a1",
     hdr = "my_lib.h",
     src = "my_lib.cc",
 )
@@ -272,7 +315,7 @@ platformio_library(
 
 Will generate a directory containing the following structure:
 ```
-My_lib/
+lib1/src/a1/
   My_lib.h
   My_lib.cpp
 ```
@@ -281,7 +324,7 @@ In the Arduino code, you should include this as follows. The PLATFORMIO_BUILD
 will be set when the library is built by the PlatformIO build system.
 ```
 #ifdef PLATFORMIO_BUILD
-#include <My_lib.h>  // This is how PlatformIO sees and includes the library.
+#include <path/My_lib.h>  // This is how PlatformIO sees and includes the library.
 #else
 #include "actual/path/to/my_lib.h" // This is for native C++.
 #endif
@@ -290,6 +333,9 @@ will be set when the library is built by the PlatformIO build system.
 Args:
   name: A string, the unique name for this rule. Start with an uppercase letter
     and use underscores between words.
+  path: A string. The path that will be used to 'include' the library files in
+    the c++ code. Should be a valid path componed by one or several directories
+    like: grand/father/son
   hdrs: A list of labels of header files (.h) of the library.
   srcs: A list of labels of source files (.c,.cc,.cpp,.ino,.pde) of the library.
   deps: A list of Bazel targets, other platformio_library targets that this one
