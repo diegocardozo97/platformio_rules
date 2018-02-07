@@ -26,7 +26,7 @@ _FILENAME = "{dirname}/{filename}"
 
 
 # Path for the libraries in lib
-_PATH_LIBRARY = "lib/{uppestDir}/{path}"
+_PATH_LIBRARY = "lib/{path}"
 
 # Command that copies the source to the destination. It creates the requiered 
 # path for the destination.
@@ -60,19 +60,18 @@ _DELETE_DIR_CONTENT_COMMAND="/bin/rm -rf -v {dir}/*"
 _SHELL_HEADER="#!/bin/bash"
 
 
-def _obtain_first_dir_in_path(strPath):
+def _convert_dotted_path_to_slashed(strPath):
   """
-  Method that gets the first directory of the path.
+  Method that convert the dotted path to a slashed path.
+  Example: dir1.dir2.dir3 -> dir1/dir2/dir3
 
   Args:
-    strPath: A string. The path without the bazel's directory. This is
-    calling short_path.
+    strPath: A string. The path with dots
 
   Outputs:
-    A string with the first directory.
+    The path with the dots replaced with /
   """
-  firstParth = strPath.partition("/")[0]
-  return firstParth
+  return strPath.replace(".", "/")
 
 def _validate_path(strPath):
   """
@@ -81,9 +80,19 @@ def _validate_path(strPath):
 
   NOTE: This doesnt fully validate the path. Because bazel validate it because it
   is used for the path of the output.
+
+  Args:
+    strPath: A string. The path with dots
+
   """
-  if strPath.endswith("/.") or strPath.find("/./") != -1:
-    fail("Attribute path cannot have /./ or end with /.")
+  if strPath.find("/") != -1:
+    fail("Attribute path cannot have a /")
+  elif strPath.startswith(".") or strPath.endswith("."):
+    fail("Attribute path cannot start or end with .")
+  elif strPath.strip() != strPath:
+    fail("Attribute path cannot have a blank space")
+  elif strPath.find("..") != -1:
+    fail("Attribute path cannot have more than one . together")
 
 
 def _platformio_library_impl(ctx):
@@ -96,21 +105,23 @@ def _platformio_library_impl(ctx):
 
   Outputs:
     transitive_lib_directory: A directory containing the files of
-    this library.
+      this library inside of the correct directories for the specified path.
   """
-  path = ctx.attr.path
-  _validate_path(path)
+  dottedPath = ctx.attr.path
+  _validate_path(dottedPath)
+  slashedPath = _convert_dotted_path_to_slashed(dottedPath)
+  completePath = "{0}/{1}".format(dottedPath, slashedPath)
 
   # Create the directory that will hold all the files.
-  commands = [_CREATE_DIR.format(dir=ctx.outputs.lib_directory.path)]
-  outputs= [ctx.outputs.lib_directory]
+  completePathDir = ctx.actions.declare_directory(completePath)
+  commands = [_CREATE_DIR.format(dir=completePathDir.path)]
+  outputs= [ctx.outputs.lib_directory, completePathDir]
 
   # Empty the directory to ensure that it doesnt have before-declared files
   # TODO: Check what order is better: first make dir and then empty it or 
   #   the other way. And see if is better to create the dir in a separate
   #   command and then use it as input and executes the empty command.
-  commands.append(_DELETE_DIR_CONTENT_COMMAND.format(
-    dir=ctx.outputs.lib_directory.path))
+  commands.append(_DELETE_DIR_CONTENT_COMMAND.format(dir=completePathDir.path))
 
   # Copy all header and source files.
   inputs = []
@@ -122,7 +133,7 @@ def _platformio_library_impl(ctx):
         file_name = f.basename #The file's name
         file_source = f
         file_destination = ctx.new_file(
-          _FILENAME.format(dirname=path, filename=file_name))
+          _FILENAME.format(dirname=completePath, filename=file_name))
         inputs.append(file_source)
         outputs.append(file_destination)
         # TODO: See if is better to copy in one time all the files to the directory
@@ -209,21 +220,18 @@ def _emit_build_action(ctx, project_dir):
   commands.append(_DELETE_DIR_CONTENT_COMMAND.format(dir=libs_dir.path))
 
   # Create the declared path and copy there the libraries' files into lib/
-  # TODO: Add the declare_file and add the outputs for this files
   for lib_dir in transitive_lib_directory:
-    # Create the directory inside lib/ with the following format:
-    # lib/uppestDir/uppestDir/restoOfThePath
-    uppestDirName = _obtain_first_dir_in_path(lib_dir.short_path) #Without bazel's path
+    # Declare the directory inside lib/ that will be the dotted-parent-dir of the 
+    # library with the resulting following format:
+    # lib/path.in.attr/path/in/attr
     dirLibrary = ctx.actions.declare_directory(
-      _PATH_LIBRARY.format(uppestDir=uppestDirName, 
-      path=lib_dir.short_path))
+      _PATH_LIBRARY.format(path=lib_dir.basename))
     outputs.append(dirLibrary)
-    commands.append(_CREATE_DIR.format(dir=dirLibrary.path))
 
-    # Copy the content of the source directory (the source files) into
-    # the directory just created inside lib/
+    # Copy the dotted-parent-dir of the library with all the dirs for the path 
+    # and the files into the directory just created inside lib/
     commands.append(_COPY_COMMAND.format(
-        source="%s/*" % lib_dir.path, destination=dirLibrary.path))
+        source=lib_dir.path, destination=libs_dir.path))
 
   commands.append(_BUILD_COMMAND.format(project_dir=project_dir))
 
@@ -307,7 +315,7 @@ If you have a C++ library with files my_lib.h and my_lib.cc, using this rule:
 platformio_library(
     # Start with an uppercase letter to keep the Arduino naming style.
     name = "My_lib",
-    path = "lib1/src/a1",
+    path = "lib1.src.a1",
     hdr = "my_lib.h",
     src = "my_lib.cc",
 )
@@ -315,16 +323,17 @@ platformio_library(
 
 Will generate a directory containing the following structure:
 ```
-lib1/src/a1/
-  My_lib.h
-  My_lib.cpp
+lib1.src.a1
+  lib1/src/a1
+    My_lib.h
+    My_lib.cpp
 ```
 
 In the Arduino code, you should include this as follows. The PLATFORMIO_BUILD
 will be set when the library is built by the PlatformIO build system.
 ```
 #ifdef PLATFORMIO_BUILD
-#include <path/My_lib.h>  // This is how PlatformIO sees and includes the library.
+#include "lib1/src/a1/My_lib.h"  // This is how PlatformIO sees and includes the library.
 #else
 #include "actual/path/to/my_lib.h" // This is for native C++.
 #endif
