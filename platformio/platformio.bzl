@@ -110,7 +110,7 @@ def _platformio_library_impl(ctx):
   dottedPath = ctx.attr.path
   _validate_path(dottedPath)
   slashedPath = _convert_dotted_path_to_slashed(dottedPath)
-  completePath = "{0}/{1}".format(dottedPath, slashedPath)
+  completePath = "{0}/{1}".format(ctx.outputs.lib_directory.basename, slashedPath)
 
   # Create the directory that will hold all the files.
   completePathDir = ctx.actions.declare_directory(completePath)
@@ -286,7 +286,7 @@ platformio_library = rule(
   implementation=_platformio_library_impl,
   outputs = {
       # TODO: Maybe is better to put as output each file instead of whole directory
-      "lib_directory": "%{path}",
+      "lib_directory": "%{path}-%{name}",
   },
   attrs={
     "path": attr.string(mandatory=True),
