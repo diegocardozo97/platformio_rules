@@ -55,6 +55,11 @@ _CREATE_DIR="/bin/mkdir -v -p {dir}"
 _DELETE_DIR_CONTENT_COMMAND="/bin/rm -rf -v {dir}/*"
 
 
+# Command that appends to a file the #include "Arduino.h"
+# -i modify the same file and save it there
+_APPEND_INCLUDE_ARDUINO="/bin/sed -i '1s/^/#include \"Arduino.h\"\\n/' {filename}"
+
+
 # Header used in the shell script that makes platformio_project executable.
 # Execution will upload the firmware to the Arduino device.
 _SHELL_HEADER="#!/bin/bash"
@@ -190,11 +195,24 @@ def _emit_main_file_action(ctx):
     ctx: The Skylark context.
   """
   # TODO: Create first the directory src
+  commands = [_COPY_COMMAND.format(
+    source=ctx.file.src.path, destination=ctx.outputs.main_cpp.path)]
+
+  # We append at the begining the #include "Arduino.h" with the idea 
+  # that if it is already there, the .h has the #ifndef protection
+  # TODO: Maybe we can have a smarter script of 'sed' where we check
+  #   if it already has the #include, to avoid arduino.h that doesnt 
+  #   have the ifndef. Or/and have a attr that says if it needs the
+  #   #include. Because also I think not all the platforms uses 
+  #   the Arduino.h
+  commands.append(_APPEND_INCLUDE_ARDUINO.format(
+    filename=ctx.outputs.main_cpp.path))
+
+
   ctx.action(
       inputs=[ctx.file.src],
       outputs=[ctx.outputs.main_cpp],
-      command=_COPY_COMMAND.format(
-          source=ctx.file.src.path, destination=ctx.outputs.main_cpp.path),
+      command="\n".join(commands),
   )
 
 
@@ -396,6 +414,9 @@ Args:
   name: A string, the unique name for this rule.
   src: A string, the name of the C++ source file, the main file for the project
     that contains the Arduino setup() and loop() functions. This is mandatory.
+    This file may or not have the #include "Arduino.h", this will be automatically
+    added in either case. This because the Arduino IDE's preprocessor appends
+    this automatically when building.
   board: A string, name of the Arduino board to build this project for. You can
     find the supported boards in the
     [PlatformIO Embedded Boards Explorer](http://platformio.org/boards). This is
