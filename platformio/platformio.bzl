@@ -154,9 +154,9 @@ def _platformio_library_impl(ctx):
   )
 
   # Collect the directory files produced by all transitive dependancies.
-  transitive_lib_directory = set([ctx.outputs.lib_directory])
-  for dep in ctx.attr.deps:
-    transitive_lib_directory += dep.transitive_lib_directory
+  transitive_lib_directory = depset(
+    direct = [ctx.outputs.lib_directory],
+    transitive = [dep.transitive_lib_directory for dep in ctx.attr.deps])
   return struct(
     transitive_lib_directory = transitive_lib_directory,
   )
@@ -225,9 +225,9 @@ def _emit_build_action(ctx, project_dir):
     ctx: The Skylark context.
     project_dir: A string, the main directory of the PlatformIO project.
   """
-  transitive_lib_directory = set()
-  for dep in ctx.attr.deps:
-    transitive_lib_directory += dep.transitive_lib_directory
+  # TODO: Check if we really need to pass through depset
+  transitive_lib_directory = depset(
+    transitive = [dep.transitive_lib_directory for dep in ctx.attr.deps])
 
   # Create the directory "lib" that will hold all the libraries.
   libs_dir = ctx.actions.declare_directory("lib")
@@ -238,7 +238,7 @@ def _emit_build_action(ctx, project_dir):
   commands.append(_DELETE_DIR_CONTENT_COMMAND.format(dir=libs_dir.path))
 
   # Create the declared path and copy there the libraries' files into lib/
-  for lib_dir in transitive_lib_directory:
+  for lib_dir in transitive_lib_directory.to_list():
     # Declare the directory inside lib/ that will be the dotted-parent-dir of the 
     # library with the resulting following format:
     # lib/path.in.attr/path/in/attr
@@ -257,7 +257,7 @@ def _emit_build_action(ctx, project_dir):
   # file and all the transitive dependancies.
   inputs=[ctx.outputs.platformio_ini, ctx.outputs.main_cpp]
   # TODO: Join this part with the one above
-  for lib_dir in transitive_lib_directory:
+  for lib_dir in transitive_lib_directory.to_list():
     inputs.append(lib_dir)
 
   outputs.append(ctx.outputs.firmware_elf)
