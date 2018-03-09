@@ -38,7 +38,7 @@ _COPY_COMMAND="/bin/cp -r -v {source} {destination}"
 
 # Command that executes the PlatformIO build system and builds the project in
 # the specified directory.
-_BUILD_COMMAND="platformio.exe run -d {project_dir}"
+_BUILD_COMMAND="platformio run -d {project_dir}"
 
 
 # Creates the specify directory creating all the parents directories
