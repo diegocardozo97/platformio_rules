@@ -10,3 +10,10 @@ lib_ldf_mode = deep+
 platform = %platform%
 board = %board%
 framework = %framework%%environment_kwargs%
+
+[env:for_uploading]
+build_flags = -Wall -DPLATFORMIO_BUILD
+lib_ldf_mode = deep+
+platform = %platform%
+board = %board%
+framework = %framework%%environment_kwargs%

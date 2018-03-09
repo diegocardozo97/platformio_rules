@@ -41,6 +41,14 @@ _COPY_COMMAND="/bin/cp -r -v {source} {destination}"
 _BUILD_COMMAND="platformio run -d {project_dir}"
 
 
+# Command that uploads the code using the platformio tool.
+# It uploads another enviroment with the same things than the original, to avoid
+# conflicts with the platformio remaking the outputs files generated.
+# It specifies the upper directory because the bash will be executed inside 
+# another dir.
+_UPLOAD_COMMAND="platformio run -t upload -d ../ -e for_uploading --disable-auto-clean"
+
+
 # Creates the specify directory creating all the parents directories
 # needed. If some or all the path already exists doesnt get an error
 # -v verbose output
@@ -276,6 +284,15 @@ def _emit_build_action(ctx, project_dir):
       },
   )
 
+def _emit_run_action(ctx):
+  command = _UPLOAD_COMMAND
+
+  ctx.actions.write(
+    output = ctx.outputs.bash_to_upload,
+    content = command,
+    is_executable = False,
+  )
+
 
 def _platformio_project_impl(ctx):
   """Builds and optionally uploads (when executed) a PlatformIO project.
@@ -298,6 +315,7 @@ def _platformio_project_impl(ctx):
   # our output files will be placed.
   project_dir = ctx.outputs.platformio_ini.dirname
   _emit_build_action(ctx, project_dir)
+  _emit_run_action(ctx)
 
 
 platformio_library = rule(
@@ -372,14 +390,14 @@ Outputs:
   transitive_lib_directory: A directory containing the files of
     this library.
 """
-
-platformio_project = rule(
+_platformio_project = rule(
     implementation=_platformio_project_impl,
     outputs = {
       "main_cpp": "src/main.cpp",
       "platformio_ini": "platformio.ini",
       "firmware_elf": ".pioenvs/%{board}/firmware.elf",
       "firmware_hex": ".pioenvs/%{board}/firmware.hex",
+      "bash_to_upload": "%{name}_to_upload.sh",
     },
     attrs={
       "_platformio_ini_tmpl": attr.label(
@@ -399,6 +417,35 @@ platformio_project = rule(
       ),
     },
 )
+
+def platformio_project(name, **kwargs):
+    """
+    This is the actual "rule" that will be called from outside.
+
+    It calls the platformio_project rule and then uses the bash generated
+    to creates the needed binary from it. This one can be used with
+    bazel run to upload code.
+    """
+    _platformio_project(
+        name = "%s_pio_rule" % name,
+        **kwargs
+    )
+
+    # The rules creates the executable bash code to upload the code when
+    # using bazel run.
+    # It is necessary to depend in all the output files in order to fully
+    # run all the above _platformio_project rule.
+    native.sh_binary(
+        name = name,
+        srcs = ["%s_pio_rule_to_upload.sh" % name],
+        data= [
+          "src/main.cpp",
+          "platformio.ini",
+          ".pioenvs/%s/firmware.elf" % kwargs["board"],
+          ".pioenvs/%s/firmware.hex" % kwargs["board"],
+        ],
+    )
+
 """Defines a project that will be built and uploaded using PlatformIO.
 
 Creates, configures and runs a PlatformIO project. This is equivalent to running:
